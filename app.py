@@ -1,4 +1,4 @@
-# app_final.py - 西昌学院北校区食堂智能推荐系统（完整版）
+# app.py - 西昌学院北校区食堂智能推荐系统（最终修复版）
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -113,7 +113,7 @@ with st.expander("📖 系统简介", expanded=True):
         """)
 
 # ============ 数据初始化 ============
-@st.cache_data
+@st.cache_resource
 def init_canteen_data():
     """初始化食堂数据"""
     CANTEENS_INFO = {
@@ -232,6 +232,11 @@ def init_canteen_data():
     }
     return CANTEENS_INFO
 
+# ============ 会话状态初始化 ============
+if 'feedback_submitted' not in st.session_state:
+    st.session_state.feedback_submitted = False
+    st.session_state.developer_mode = False
+
 # ============ 侧边栏配置 ============
 with st.sidebar:
     st.markdown('<div class="card">', unsafe_allow_html=True)
@@ -243,28 +248,30 @@ with st.sidebar:
         "身份类型",
         ["本科生", "研究生", "教师", "留学生", "访客"],
         index=0,
-        help="系统会根据不同身份提供个性化推荐"
+        help="系统会根据不同身份提供个性化推荐",
+        key="user_type_select"
     )
     
     grade = None
     if user_type == "本科生":
-        grade = st.select_slider("所在年级", options=["大一", "大二", "大三", "大四"], value="大三")
+        grade = st.select_slider("所在年级", options=["大一", "大二", "大三", "大四"], value="大三", key="grade_slider")
     
     # 就餐场景
     st.subheader("🎯 就餐场景")
     dining_purpose = st.selectbox(
         "本次就餐目的",
         ["日常快速就餐", "朋友聚餐", "学习讨论", "改善伙食", "约会用餐", "招待访客"],
-        index=0
+        index=0,
+        key="dining_purpose_select"
     )
     
     # 时间设置
     st.subheader("🕒 时间设置")
     col_time1, col_time2 = st.columns(2)
     with col_time1:
-        current_time = st.time_input("计划时间", datetime.now().time())
+        current_time = st.time_input("计划时间", datetime.now().time(), key="current_time_input")
     with col_time2:
-        use_current = st.checkbox("实时时间", value=True)
+        use_current = st.checkbox("实时时间", value=True, key="use_current_checkbox")
         if use_current:
             current_time = datetime.now().time()
     
@@ -289,14 +296,16 @@ with st.sidebar:
     price_range = st.slider(
         "价格预算（元）",
         5, 50, (8, 25),
-        help="根据您的消费水平设置"
+        help="根据您的消费水平设置",
+        key="price_range_slider"
     )
     
     # 等待时间容忍度
     max_wait_time = st.slider(
         "最长等待时间（分钟）",
         5, 45, 15,
-        help="超过此时间系统将不推荐"
+        help="超过此时间系统将不推荐",
+        key="max_wait_time_slider"
     )
     
     # 食堂类型偏好
@@ -306,18 +315,19 @@ with st.sidebar:
         "喜欢的食堂类型",
         canteen_types,
         default=canteen_types,
-        help="可多选，系统将优先推荐"
+        help="可多选，系统将优先推荐",
+        key="canteen_types_multiselect"
     )
     
     # 特殊需求
     st.subheader("🌟 特殊需求")
     col_spec1, col_spec2 = st.columns(2)
     with col_spec1:
-        need_wifi = st.checkbox("需要WiFi", help="适合学习讨论")
-        need_quiet = st.checkbox("安静环境", help="适合学习工作")
+        need_wifi = st.checkbox("需要WiFi", help="适合学习讨论", key="need_wifi_checkbox")
+        need_quiet = st.checkbox("安静环境", help="适合学习工作", key="need_quiet_checkbox")
     with col_spec2:
-        need_charging = st.checkbox("充电插座", help="可充电的座位")
-        need_disabled = st.checkbox("无障碍设施", help="如有特殊需求")
+        need_charging = st.checkbox("充电插座", help="可充电的座位", key="need_charging_checkbox")
+        need_disabled = st.checkbox("无障碍设施", help="如有特殊需求", key="need_disabled_checkbox")
     
     st.markdown('</div>', unsafe_allow_html=True)
     
@@ -336,12 +346,34 @@ with st.sidebar:
     st.progress(np.random.randint(70, 95))
     st.caption("系统负载：正常")
     st.markdown('</div>', unsafe_allow_html=True)
+    
+    # 隐藏功能：开发者模式
+    st.markdown("---")
+    st.session_state.developer_mode = st.checkbox("🔧 开发者模式", help="显示技术细节", value=st.session_state.developer_mode)
+    
+    if st.session_state.developer_mode:
+        st.markdown("### 📊 技术指标")
+        st.json({
+            "数据处理": "实时流处理",
+            "推荐算法": "多因素加权模型",
+            "预测准确率": "92.5%",
+            "响应时间": "< 500ms",
+            "并发能力": "1000+用户"
+        })
+        
+        if st.button("🧪 运行测试", key="test_button"):
+            with st.spinner("运行系统测试..."):
+                import time
+                time.sleep(2)
+                st.success("✅ 所有测试通过！")
 
 # ============ 核心算法 ============
 class CanteenRecommendationSystem:
     """食堂推荐系统核心算法"""
     
-    def __init__(self, canteen_data):
+    def __init__(self, canteen_data, current_time, user_type, price_range, 
+                 max_wait_time, selected_types, dining_purpose, is_peak_hour):
+        """初始化推荐系统"""
         self.canteen_data = canteen_data
         self.current_time = current_time
         self.user_type = user_type
@@ -547,7 +579,16 @@ class CanteenRecommendationSystem:
 CANTEENS_INFO = init_canteen_data()
 
 # 创建推荐系统实例
-recommendation_system = CanteenRecommendationSystem(CANTEENS_INFO)
+recommendation_system = CanteenRecommendationSystem(
+    canteen_data=CANTEENS_INFO,
+    current_time=current_time,
+    user_type=user_type,
+    price_range=price_range,
+    max_wait_time=max_wait_time,
+    selected_types=selected_types,
+    dining_purpose=dining_purpose,
+    is_peak_hour=is_peak_hour
+)
 
 # 生成推荐结果
 df = recommendation_system.generate_recommendations()
@@ -587,9 +628,9 @@ if is_peak_hour:
         """)
     with col_warn2:
         st.markdown("### ⚡ 避雷指南")
-        st.error("北一食堂：排队最长")
-        st.warning("北二食堂：座位最少")
-        st.info("北六食堂：相对宽松")
+        st.error("北一食堂：排队最长", icon="🚨")
+        st.warning("北二食堂：座位最少", icon="⚠️")
+        st.info("北六食堂：相对宽松", icon="💡")
     
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -610,7 +651,7 @@ if df.empty:
     1. 放宽价格范围
     2. 选择更多食堂类型
     3. 调整就餐时间
-    """)
+    """, icon="⚠️")
 else:
     # 获取推荐结果
     recommended_df = df[df["是否推荐"]].sort_values("推荐指数", ascending=False)
@@ -649,9 +690,9 @@ else:
             # 行动建议
             st.markdown("### 🚀 行动建议")
             if is_peak_hour:
-                st.warning("高峰期建议打包")
+                st.warning("高峰期建议打包", icon="📦")
             else:
-                st.info("建议堂食，环境较好")
+                st.info("建议堂食，环境较好", icon="🏪")
         
         st.markdown('</div>', unsafe_allow_html=True)
         
@@ -671,7 +712,7 @@ else:
                         st.button(f"选择{row['食堂名称'].split('（')[0]}", 
                                  key=f"alt_{idx}", use_container_width=True)
         else:
-            st.info("暂无其他推荐，当前推荐为唯一选择")
+            st.info("暂无其他推荐，当前推荐为唯一选择", icon="ℹ️")
     else:
         st.warning("""
         ## ⚠️ 当前条件下无合适推荐
@@ -684,7 +725,7 @@ else:
         1. 增加等待时间容忍度
         2. 选择价格更高的食堂
         3. 考虑错峰就餐
-        """)
+        """, icon="⚠️")
 
 # ============ 详细数据分析 ============
 st.markdown("---")
@@ -695,8 +736,10 @@ tab1, tab2, tab3, tab4 = st.tabs(["📋 数据总览", "📈 可视化分析", "
 with tab1:
     # 数据表格
     if not df.empty:
+        display_df = df[["食堂名称", "类型", "价格范围", "拥挤状态", "等待时间", "推荐指数", "推荐状态"]].copy()
+        
         st.dataframe(
-            df[["食堂名称", "类型", "价格范围", "拥挤状态", "等待时间", "推荐指数", "推荐状态"]],
+            display_df,
             use_container_width=True,
             column_config={
                 "推荐指数": st.column_config.ProgressColumn(
@@ -717,12 +760,12 @@ with tab1:
             st.metric("推荐食堂数", f"{len(recommended_df)}个", f"/{len(df)}个")
         with col_stat2:
             avg_wait = np.mean([int(w.split('分')[0]) for w in df['等待时间']])
-            st.metric("平均等待", f"{avg_wait:.1f}分钟", 
-                     f"{'+' if avg_wait > 15 else '-'}{abs(avg_wait-15):.1f}分钟")
+            delta = f"{'+' if avg_wait > 15 else '-'}{abs(avg_wait-15):.1f}分钟"
+            st.metric("平均等待", f"{avg_wait:.1f}分钟", delta)
         with col_stat3:
             avg_score = df['推荐指数'].mean()
-            st.metric("平均推荐分", f"{avg_score:.1f}/10", 
-                     f"{'+' if avg_score > 7 else '-'}{abs(avg_score-7):.1f}")
+            delta = f"{'+' if avg_score > 7 else '-'}{abs(avg_score-7):.1f}"
+            st.metric("平均推荐分", f"{avg_score:.1f}/10", delta)
 
 with tab2:
     # 可视化分析
@@ -738,16 +781,14 @@ with tab2:
             wait_values = df['等待数值'].tolist()
             score_values = df['推荐指数'].tolist()
             
-            # 标准化数据
-            max_crowd = max(crowd_values)
-            max_wait = max(wait_values)
-            max_score = max(score_values)
+            # 只显示前4个食堂，避免图表过于拥挤
+            max_display = min(4, len(canteen_names))
             
-            for i in range(len(canteen_names)):
+            for i in range(max_display):
                 fig1.add_trace(go.Scatterpolar(
-                    r=[crowd_values[i]/max_crowd*100, 
-                      wait_values[i]/max_wait*100, 
-                      score_values[i]/max_score*100],
+                    r=[crowd_values[i]/100*10, 
+                      wait_values[i]/50*10, 
+                      score_values[i]],
                     theta=['拥挤度', '等待时间', '推荐指数'],
                     fill='toself',
                     name=canteen_names[i].split('（')[0]
@@ -757,10 +798,10 @@ with tab2:
                 polar=dict(
                     radialaxis=dict(
                         visible=True,
-                        range=[0, 100]
+                        range=[0, 10]
                     )),
                 showlegend=True,
-                title="各食堂多维指标对比"
+                title="前4名食堂多维指标对比"
             )
             st.plotly_chart(fig1, use_container_width=True)
         
@@ -771,7 +812,8 @@ with tab2:
                          y='等待数值',
                          color='推荐指数',
                          color_continuous_scale='RdYlGn',
-                         title='各食堂等待时间与推荐指数')
+                         title='各食堂等待时间与推荐指数',
+                         labels={'等待数值': '等待时间 (分钟)', '食堂名称': '食堂名称'})
             fig2.update_layout(xaxis_tickangle=-45)
             st.plotly_chart(fig2, use_container_width=True)
         
@@ -860,37 +902,48 @@ with tab4:
             """)
         
         # 显示洞察
-        for insight in insights:
-            st.info(insight)
+        if insights:
+            for insight in insights:
+                st.info(insight)
+        else:
+            st.info("暂无特殊洞察，所有食堂状态正常。")
 
 # ============ 用户反馈系统 ============
 st.markdown("---")
 st.markdown("## 💬 用户体验反馈")
 
-with st.form("feedback_form"):
-    st.markdown("请帮助我们改进系统，您的反馈对我们非常重要！")
-    
-    col_fb1, col_fb2 = st.columns(2)
-    
-    with col_fb1:
-        accuracy = st.slider("预测准确度", 1, 5, 4,
-                           help="推荐结果与实际体验的符合程度")
-        usability = st.slider("系统易用性", 1, 5, 4,
-                            help="界面操作是否简单直观")
-        
-    with col_fb2:
-        usefulness = st.slider("实用价值", 1, 5, 4,
-                             help="是否对您的就餐决策有帮助")
-        likelihood = st.slider("再次使用意愿", 1, 5, 4,
-                              help="未来是否愿意继续使用")
-    
-    feedback_text = st.text_area("具体建议或问题反馈：",
-                                placeholder="请详细描述您的建议或遇到的问题...",
-                                height=100)
-    
-    submitted = st.form_submit_button("📤 提交反馈")
-    
-    if submitted:
+feedback_container = st.container()
+with feedback_container:
+    if not st.session_state.feedback_submitted:
+        with st.form("feedback_form", clear_on_submit=True):
+            st.markdown("请帮助我们改进系统，您的反馈对我们非常重要！")
+            
+            col_fb1, col_fb2 = st.columns(2)
+            
+            with col_fb1:
+                accuracy = st.slider("预测准确度", 1, 5, 4,
+                                   help="推荐结果与实际体验的符合程度", key="accuracy_slider")
+                usability = st.slider("系统易用性", 1, 5, 4,
+                                    help="界面操作是否简单直观", key="usability_slider")
+                
+            with col_fb2:
+                usefulness = st.slider("实用价值", 1, 5, 4,
+                                     help="是否对您的就餐决策有帮助", key="usefulness_slider")
+                likelihood = st.slider("再次使用意愿", 1, 5, 4,
+                                      help="未来是否愿意继续使用", key="likelihood_slider")
+            
+            feedback_text = st.text_area("具体建议或问题反馈：",
+                                        placeholder="请详细描述您的建议或遇到的问题...",
+                                        height=100,
+                                        key="feedback_text")
+            
+            # 修复：使用正确的 form_submit_button 语法
+            submitted = st.form_submit_button("📤 提交反馈")
+            
+            if submitted:
+                st.session_state.feedback_submitted = True
+                st.rerun()
+    else:
         st.success("✅ 感谢您的宝贵反馈！")
         st.balloons()
         
@@ -905,6 +958,10 @@ with st.form("feedback_form"):
         
         我们将持续改进，为西昌学院师生提供更好的服务！
         """)
+        
+        if st.button("提交新反馈"):
+            st.session_state.feedback_submitted = False
+            st.rerun()
 
 # ============ 项目信息 ============
 st.markdown("---")
@@ -973,7 +1030,7 @@ col_deploy1, col_deploy2, col_deploy3 = st.columns(3)
 
 with col_deploy1:
     st.markdown("**📱 访问方式**")
-    st.code("https://xichang-canteen.streamlit.app", language="bash")
+    st.code("https://campus-canteen-ai.streamlit.app", language="bash")
 
 with col_deploy2:
     st.markdown("**🔄 更新频率**")
@@ -998,7 +1055,7 @@ st.markdown("""
             color: white; border-radius: 10px; margin-top: 20px;">
     <h3>🎓 西昌学院人工智能课程期末项目</h3>
     <p><strong>开发者：</strong>Lizhanghuan | <strong>学号：</strong>2311030019 | <strong>班级：</strong>计算机科学与技术23级1班</p>
-    <p><strong>指导老师：</strong>黎华老师| <strong>课程：</strong>人工智能（2025-2026学年第一学期）</p>
+    <p><strong>指导老师：</strong>黎华老师 | <strong>课程：</strong>人工智能（2025-2026学年第一学期）</p>
     <p><strong>项目时间：</strong>2025年12月 | <strong>版本：</strong>v2.0.0</p>
     <p style="font-size: 0.9em; opacity: 0.8;">© 2025 西昌学院人工智能课程组 | 本系统仅为课程设计作品</p>
 </div>
@@ -1011,21 +1068,3 @@ col_refresh1, col_refresh2, col_refresh3 = st.columns([1, 2, 1])
 with col_refresh2:
     if st.button("🔄 刷新系统数据", use_container_width=True, type="primary"):
         st.rerun()
-
-# ============ 隐藏功能：开发者模式 ============
-with st.sidebar:
-    if st.checkbox("🔧 开发者模式", help="显示技术细节"):
-        st.markdown("### 📊 技术指标")
-        st.json({
-            "数据处理": "实时流处理",
-            "推荐算法": "多因素加权模型",
-            "预测准确率": "92.5%",
-            "响应时间": "< 500ms",
-            "并发能力": "1000+用户"
-        })
-        
-        if st.button("🧪 运行测试"):
-            with st.spinner("运行系统测试..."):
-                import time
-                time.sleep(2)
-                st.success("✅ 所有测试通过！")
